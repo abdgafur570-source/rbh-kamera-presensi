@@ -1,0 +1,135 @@
+<!-- RBH KAMERA PRESENSI - VERSI BLOGGER FINAL -->
+<div id="rbh-camera-page">
+  <style>
+    #rbh-camera-page{font-family:Arial,sans-serif;max-width:520px;margin:20px auto;padding:0 12px;color:#0f172a}
+    #rbh-camera-page .rbh-card{background:#fff;border:1px solid #e2e8f0;border-radius:20px;overflow:hidden;box-shadow:0 8px 28px rgba(15,23,42,.10)}
+    #rbh-camera-page .rbh-head{background:#0167BC;color:#fff;padding:18px 20px}
+    #rbh-camera-page .rbh-head h2{margin:0 0 5px;font-size:19px}
+    #rbh-camera-page .rbh-head p{margin:0;font-size:12px;opacity:.92}
+    #rbh-camera-page .rbh-body{padding:16px}
+    #rbh-camera-page .rbh-camera{position:relative;background:#0f172a;border-radius:15px;overflow:hidden;aspect-ratio:3/4;display:flex;align-items:center;justify-content:center}
+    #rbh-camera-page video{width:100%;height:100%;object-fit:cover;display:block;transform:scaleX(-1);background:#0f172a}
+    #rbh-camera-page .rbh-guide{position:absolute;left:13%;right:13%;top:10%;bottom:10%;border:2px solid rgba(255,255,255,.78);border-radius:45%;pointer-events:none}
+    #rbh-camera-page .rbh-placeholder{position:absolute;color:#cbd5e1;text-align:center;font-size:13px;line-height:1.5;padding:20px}
+    #rbh-camera-page .rbh-status{min-height:20px;text-align:center;font-size:12px;color:#64748b;margin:12px 0}
+    #rbh-camera-page .rbh-error{display:none;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:11px;padding:11px;font-size:12px;line-height:1.5;margin-bottom:12px}
+    #rbh-camera-page .rbh-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    #rbh-camera-page button{width:100%;border:0;border-radius:12px;padding:13px 10px;font-size:13px;font-weight:700;cursor:pointer}
+    #rbh-camera-page #rbh-start{background:#e5f1ff;color:#0167BC}
+    #rbh-camera-page #rbh-capture{background:#0167BC;color:#fff}
+    #rbh-camera-page #rbh-capture:disabled{opacity:.45;cursor:not-allowed}
+    #rbh-camera-page #rbh-close{margin-top:9px;background:#e2e8f0;color:#334155}
+    #rbh-camera-page .rbh-note{text-align:center;color:#64748b;font-size:11px;line-height:1.5;margin-top:12px}
+    @media(max-width:400px){#rbh-camera-page{margin:8px auto;padding:0 8px}.rbh-actions{grid-template-columns:1fr!important}}
+  </style>
+
+  <div class="rbh-card">
+    <div class="rbh-head">
+      <h2>📷 Kamera Presensi Ustadzah</h2>
+      <p>Rumah Belajar Hayyan • Foto langsung dari kamera</p>
+    </div>
+    <div class="rbh-body">
+      <div id="rbh-error" class="rbh-error"></div>
+      <div class="rbh-camera">
+        <video id="rbh-video" autoplay muted playsinline></video>
+        <div id="rbh-placeholder" class="rbh-placeholder">Tekan <b>Aktifkan Kamera</b> untuk membuka kamera.</div>
+        <div class="rbh-guide"></div>
+      </div>
+      <div id="rbh-status" class="rbh-status">Kamera belum diaktifkan.</div>
+      <div class="rbh-actions">
+        <button id="rbh-start" type="button">📷 Aktifkan Kamera</button>
+        <button id="rbh-capture" type="button" disabled>✅ Ambil Foto</button>
+      </div>
+      <button id="rbh-close" type="button">Tutup</button>
+      <div class="rbh-note">Tidak ada upload dari galeri. Foto hanya dapat diambil melalui kamera perangkat.</div>
+      <canvas id="rbh-canvas" style="display:none"></canvas>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    function initRBHCamera(){
+      var video=document.getElementById('rbh-video');
+      var canvas=document.getElementById('rbh-canvas');
+      var start=document.getElementById('rbh-start');
+      var capture=document.getElementById('rbh-capture');
+      var close=document.getElementById('rbh-close');
+      var status=document.getElementById('rbh-status');
+      var error=document.getElementById('rbh-error');
+      var placeholder=document.getElementById('rbh-placeholder');
+      var stream=null;
+      if(!video||!canvas||!start||!capture)return;
+
+      function setStatus(t){status.textContent=t||'';}
+      function showError(t){error.textContent=t;error.style.display='block';}
+      function clearError(){error.textContent='';error.style.display='none';}
+      function stop(){
+        if(stream){stream.getTracks().forEach(function(t){try{t.stop();}catch(e){}});stream=null;}
+        video.srcObject=null;
+        capture.disabled=true;
+      }
+      function explain(e){
+        var n=e&&e.name||'';
+        if(n==='NotAllowedError'||n==='PermissionDeniedError')return 'Izin kamera ditolak. Klik ikon kunci/kamera di address bar Chrome, izinkan Kamera untuk halaman ini, lalu tekan Aktifkan Kamera lagi.';
+        if(n==='NotFoundError'||n==='DevicesNotFoundError')return 'Kamera tidak ditemukan pada perangkat ini.';
+        if(n==='NotReadableError'||n==='TrackStartError')return 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi lain yang menggunakan kamera lalu coba lagi.';
+        if(n==='SecurityError')return 'Chrome memblokir kamera karena pengaturan keamanan.';
+        if(window.isSecureContext===false)return 'Halaman kamera harus dibuka dengan HTTPS.';
+        return 'Kamera tidak dapat dibuka. Pastikan Chrome mendapat izin Kamera.';
+      }
+      async function startCamera(){
+        clearError();
+        stop();
+        if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){showError('Browser tidak mendukung kamera langsung. Gunakan Chrome terbaru melalui HTTPS.');return;}
+        setStatus('Meminta izin kamera…');
+        try{
+          var s;
+          try{
+            s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:720},height:{ideal:960}},audio:false});
+          }catch(first){
+            s=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+          }
+          stream=s;
+          video.srcObject=s;
+          video.muted=true;
+          video.setAttribute('playsinline','');
+          await video.play();
+          placeholder.style.display='none';
+          capture.disabled=false;
+          setStatus('Kamera aktif. Posisikan wajah di dalam panduan lalu tekan Ambil Foto.');
+        }catch(e){stop();setStatus('Kamera belum aktif.');showError(explain(e));}
+      }
+      function capturePhoto(){
+        clearError();
+        if(!stream||!video.videoWidth||!video.videoHeight){showError('Kamera belum siap. Tunggu gambar kamera muncul, lalu coba lagi.');return;}
+        var max=480;
+        var scale=Math.min(1,max/video.videoWidth);
+        canvas.width=Math.max(320,Math.round(video.videoWidth*scale));
+        canvas.height=Math.max(240,Math.round(video.videoHeight*scale));
+        var ctx=canvas.getContext('2d');
+        if(!ctx){showError('Browser tidak dapat memproses foto.');return;}
+        ctx.drawImage(video,0,0,canvas.width,canvas.height);
+        var dataUrl=canvas.toDataURL('image/jpeg',0.55);
+        if(!dataUrl||dataUrl.length<1000){showError('Foto gagal dibuat. Silakan coba lagi.');return;}
+
+        if(window.opener&&!window.opener.closed){
+          try{
+            window.opener.postMessage({type:'RBH_CAMERA_PHOTO',dataUrl:dataUrl},'*');
+            setStatus('Foto berhasil dikirim ke aplikasi RBH.');
+            stop();
+            setTimeout(function(){window.close();},600);
+            return;
+          }catch(e){}
+        }
+        showError('Aplikasi RBH tidak terhubung. Buka kamera dengan menekan tombol Buka Kamera Presensi dari aplikasi RBH, jangan membuka halaman ini langsung.');
+      }
+      start.addEventListener('click',startCamera);
+      capture.addEventListener('click',capturePhoto);
+      close.addEventListener('click',function(){stop();try{window.close();}catch(e){} });
+      window.addEventListener('pagehide',stop);
+      setStatus('Siap. Tekan Aktifkan Kamera.');
+    }
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initRBHCamera);else initRBHCamera();
+  })();
+  </script>
+</div>
